@@ -19,7 +19,7 @@ use tui::{
 use super::{current_time, format_duration_hms, Duration, String, TimedStats, TuiContext, TerminalUI};
 
 #[derive(Default)]
-pub struct TuiUI {
+pub struct AFLUI {
     title: String,
     enhanced_graphics: bool,
     show_logs: bool,
@@ -31,14 +31,14 @@ pub struct TuiUI {
     pub should_quit: bool,
 }
 
-impl TuiUI {
+impl AFLUI {
     pub fn new(title: String, enhanced_graphics: bool) -> Self {
         Self {
             title,
             enhanced_graphics,
             show_logs: true,
             clients_idx: 1,
-            ..TuiUI::default()
+            ..AFLUI::default()
         }
     }
 
@@ -366,7 +366,7 @@ impl TuiUI {
     }
 }
 
-impl TerminalUI for TuiUI {
+impl TerminalUI for AFLUI {
 
     fn on_key(&mut self, c: char) {
         match c {
