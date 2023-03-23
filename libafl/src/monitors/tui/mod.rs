@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use std::{
     collections::VecDeque,
     fmt::Write,
-    io::{self, BufRead},
+    io::{self, BufRead, Stdout},
     panic,
     string::String,
     sync::{Arc, RwLock},
@@ -20,7 +20,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use hashbrown::HashMap;
-use tui::{backend::CrosstermBackend, Terminal};
+use tui::{backend::CrosstermBackend, Terminal, Frame};
 
 #[cfg(feature = "introspection")]
 use super::{ClientPerfMonitor, PerfFeature};
@@ -30,7 +30,9 @@ use crate::{
 };
 
 mod ui;
+mod aflui;
 use ui::TuiUI;
+use aflui::AFLUI;
 
 const DEFAULT_TIME_WINDOW: u64 = 60 * 10; // 10 min
 const DEFAULT_LOGS_NUMBER: usize = 128;
@@ -326,20 +328,23 @@ impl Monitor for TuiMonitor {
 impl TuiMonitor {
     /// Creates the monitor
     #[must_use]
-    pub fn new(title: String, enhanced_graphics: bool) -> Self {
-        Self::with_time(title, enhanced_graphics, current_time())
+    pub fn new(title: String, enhanced_graphics: bool, afl_style: bool) -> Self {
+        Self::with_time(title, enhanced_graphics, afl_style, current_time())
     }
 
     /// Creates the monitor with a given `start_time`.
     #[must_use]
-    pub fn with_time(title: String, enhanced_graphics: bool, start_time: Duration) -> Self {
+    pub fn with_time(title: String, enhanced_graphics: bool, afl_style: bool, start_time: Duration) -> Self {
         let context = Arc::new(RwLock::new(TuiContext::new(start_time)));
+
         run_tui_thread(
             context.clone(),
             Duration::from_millis(250),
             title,
             enhanced_graphics,
+            afl_style,
         );
+
         Self {
             context,
             start_time,
@@ -353,6 +358,7 @@ fn run_tui_thread(
     tick_rate: Duration,
     title: String,
     enhanced_graphics: bool,
+    afl_style: bool,
 ) {
     thread::spawn(move || -> io::Result<()> {
         // setup terminal
@@ -362,7 +368,11 @@ fn run_tui_thread(
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
-        let mut ui = TuiUI::new(title, enhanced_graphics);
+        let mut ui: Box<dyn TerminalUI> = if afl_style {
+            Box::new(TuiUI::new(title, enhanced_graphics))
+        } else {
+            Box::new(AFLUI::new(title, enhanced_graphics))
+        };
 
         let mut last_tick = Instant::now();
         let mut cnt = 0;
@@ -409,7 +419,7 @@ fn run_tui_thread(
                 //context.on_tick();
                 last_tick = Instant::now();
             }
-            if ui.should_quit {
+            if ui.should_quit() {
                 // restore terminal
                 disable_raw_mode()?;
                 execute!(
@@ -430,8 +440,23 @@ fn run_tui_thread(
                 execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
                 cnt = 0;
-                ui.should_quit = false;
+                ui.set_should_quit(false);
             }
         }
     });
+}
+
+
+pub trait TerminalUI {
+    fn draw(&mut self, f: &mut Frame<CrosstermBackend<Stdout>>, app: &Arc<RwLock<TuiContext>>);
+
+    fn on_key(&mut self, c: char);
+
+    fn on_right(&mut self);
+
+    fn on_left(&mut self);
+
+    fn should_quit(&mut self) -> bool;
+
+    fn set_should_quit(&mut self, value: bool);
 }
